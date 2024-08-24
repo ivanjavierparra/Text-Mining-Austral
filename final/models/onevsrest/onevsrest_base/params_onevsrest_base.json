@@ -1,0 +1,13 @@
+{
+    "study_name": "onevsrest_base",
+    "features": [
+        "N_cuenta",
+        "N_Tesoreria",
+        "N_Entidad",
+        "Cod",
+        "Fte_Fin",
+        "Cuit",
+        "Cod_Bco",
+        "target"
+    ]
+}
