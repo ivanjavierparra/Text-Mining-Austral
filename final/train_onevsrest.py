@@ -73,7 +73,7 @@ def model_onevsrest(path_df, study_name, ntrials):
     # Crear un estudio y optimizar
     study = optuna.create_study(direction='maximize', 
                                 storage=bbdd,  # Specify the storage URL here.
-                                study_name=study_name,
+                                study_name=f"onevsrest_{study_name}",
                                 load_if_exists=True)
     study.optimize(objective, n_trials=ntrials)
 

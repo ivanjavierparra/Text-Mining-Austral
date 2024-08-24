@@ -1,5 +1,5 @@
 {
-    "study_name": "onevsrest_base",
+    "study_name": "modelo_base",
     "features": [
         "N_cuenta",
         "N_Tesoreria",
