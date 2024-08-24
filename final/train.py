@@ -5,20 +5,14 @@ import lightgbm as lgb
 import optuna
 from sklearn.metrics import make_scorer, cohen_kappa_score, accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split, cross_val_score
-import matplotlib.pyplot as plt
-import seaborn as sns
-import json
-import os
+
 
 warnings.filterwarnings("ignore")
 
-def model_lightgbm(path_df,study_name,ntrials):
+def model_lightgbm(study_name,ntrials):
   try:
-    # leer datos
-    os.makedirs("models",exist_ok=True)
-    os.makedirs("models/lgbm", exist_ok=True)
-    os.makedirs(f"models/lgbm/{study_name}", exist_ok=True)    
-    df = pd.read_csv(path_df)
+    # leer datos 
+    df = pd.read_csv(f"models/lgbm/{study_name}/df_train.csv")
     bbdd = "sqlite:///optuna.sqlite3"
     
     # convertir columnas a nro
@@ -26,17 +20,7 @@ def model_lightgbm(path_df,study_name,ntrials):
       if df[col].dtype == 'object':
        df[col] = pd.to_numeric(df[col], errors='ignore')
     
-    # filtrar features
-    features = []
-    for x in enumerate(df.dtypes):
-        if x[1] in ["float64","int64","bool"]:
-            features.append(df.columns[x[0]])
-    params = {"study_name":study_name,
-              "features":features}
-    with open(f'models/lgbm/{study_name}/params_{study_name}.json','w') as file:
-      json.dump(params,file,indent=4)
-      
-    X = df[features]
+
     X = df.drop(columns=["target"])
     y = df["target"]
     

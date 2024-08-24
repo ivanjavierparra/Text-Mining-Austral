@@ -30,9 +30,9 @@ def plotcm(cm,path):
     plt.savefig(path)
 
 
-def test(path_df,study_name):
+def test(study_name):
     try:
-        df = pd.read_csv(path_df)
+        df = pd.read_csv(f"models/lgbm/{study_name}/df_train.csv")
         bbdd = "sqlite:///optuna.sqlite3"
     
         SEED = 12345
@@ -41,6 +41,7 @@ def test(path_df,study_name):
         features = params_work["features"]
         
         X = df[features]
+        X = X.drop(columns=["target"])
         y = df.target
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
         

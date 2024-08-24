@@ -4,6 +4,8 @@ import spacy
 from nltk.corpus import stopwords
 import pandas as pd
 import traceback
+import feature_engineering
+import json
 try:
   STOPWORDS = set(stopwords.words('spanish'))
   nlp = spacy.load("es_core_news_sm")
@@ -20,7 +22,7 @@ from nltk.corpus import stopwords
 import warnings
 warnings.filterwarnings("ignore")
 
-def preprocess(path_df):
+def preprocess(path_df,study_name, fe=True):
   try:
     # leer datos
     df = pd.read_excel(path_df)
@@ -34,7 +36,31 @@ def preprocess(path_df):
 
     df['target'] = df['Class'].apply(get_class)
     df["texto_limpio"] = df["Descripcion"].apply(pre_procesamiento_texto)
-    df.to_csv("df_preprocesado.csv", index=False)
+    dictOfWords = {}
+    
+    # si está activado el feature engineering
+    if fe:
+      print("realizando feature engineering")
+      df, dictOfWords = feature_engineering.fe(df)
+    else:
+      print("No se realizó feature engineering")
+      
+    # filtrar features
+    features = []
+    for x in enumerate(df.dtypes):
+        if x[1] in ["float64","int64","bool"]:
+            features.append(df.columns[x[0]])
+            
+            
+    params = {"study_name":study_name,
+              "features":features,
+              "dict_words":dictOfWords}
+    
+    with open(f'models/lgbm/{study_name}/params_{study_name}.json','w') as file:
+      json.dump(params,file,indent=4)
+      
+    df[features].to_csv(f"models/lgbm/{study_name}/df_train.csv", index=False)
+  
   except Exception as e:
     tb = traceback.format_exc()
     print(f"Se produjo un error: {e}")
