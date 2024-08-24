@@ -1,0 +1,25 @@
+{
+    "study_name": "modelo_base",
+    "features": [
+        "Tipo_comp",
+        "N_cuenta",
+        "Desc_Cuenta",
+        "N_Tesoreria",
+        "Desc_Tesoreria",
+        "N_Entidad",
+        "Desc_Entidad",
+        "Tipo_Pres",
+        "Tipo_Reg",
+        "Clase_Reg",
+        "Cod",
+        "Fte_Fin",
+        "Cuit",
+        "Beneficiario",
+        "Descripcion",
+        "Tipo_cta",
+        "Cod_Bco",
+        "Class",
+        "target",
+        "texto_limpio"
+    ]
+}
