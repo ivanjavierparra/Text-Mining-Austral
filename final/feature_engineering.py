@@ -4,9 +4,9 @@ from nltk.tokenize import word_tokenize
 import json
 import traceback
 
-def fe(path_df):
+def fe(df):
   try:
-    df = pd.read_csv(path_df)
+    df
     # convertir categoricas a numericas---------------------------------------------------------
 
     df['texto_limpio'] = df['texto_limpio'].astype(str)
@@ -49,11 +49,10 @@ def fe(path_df):
         dictOfWords[str(target)] = dic_words
         df[f'pesos_{target}'] = df['texto_limpio'].apply(pesos,dic_words=dic_words)
 
-    # guardar diccionario de palabras
-    with open('dict_words_ivan.json', 'w') as file:
-        json.dump(dictOfWords, file, indent=4)
-    df.to_csv("df_train.csv", index=False)
+    return df, dictOfWords
+    
   except Exception as e:
     tb = traceback.format_exc()
     print(f"Se produjo un error: {e}")
     print(f"Detalles del error:\n{tb}")
+    return None

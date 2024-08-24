@@ -1,0 +1,6 @@
+study_name: modelo_text_mining
+Fecha y hora: 2024-08-24 16:56:31.487552
+Kappa: 0.989943924346864
+Accuracy: 0.9912659046797498
+dimensióm Test: (9274, 54)
+Mejores hiperparámetros: {'learning_rate': 0.08831991509732962, 'num_leaves': 177, 'max_depth': 12, 'min_child_samples': 84, 'subsample': 0.5719771863584955, 'colsample_bytree': 0.8184250485412693, 'reg_alpha': 1.2324798043921728e-05, 'reg_lambda': 0.18129354694496094}
