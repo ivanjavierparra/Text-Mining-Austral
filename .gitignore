@@ -9,3 +9,4 @@ df_train.csv
 df_train_base.csv
 df_train_completo.csv
 work/
+multiclass/ivanrnn.ipynb

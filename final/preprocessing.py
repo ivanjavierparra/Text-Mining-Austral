@@ -138,3 +138,11 @@ def filtrar_palabras_numeros(texto):
     # Expresión regular para encontrar palabras o números con al menos 3 caracteres
     palabras_filtradas = re.findall(r'\b\w{3,}\b', texto)
     return " ".join(palabras_filtradas)
+
+
+def eliminar_palabras(texto):
+    texto = texto.upper()
+    texto = re.findall(r"(?!CTA)(?!RES)(?!PAGO)(?!AGO)(?!PAG)[A-Z0-9]{3,}", texto)
+    texto = list(dict.fromkeys(texto))
+    texto = " ".join(texto).strip()
+    return texto
