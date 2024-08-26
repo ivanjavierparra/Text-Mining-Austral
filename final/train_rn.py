@@ -10,20 +10,23 @@ import spacy
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import optuna
-from sklearn.metrics import make_scorer, cohen_kappa_score
+from sklearn.metrics import make_scorer, cohen_kappa_score, classification_report
 from sklearn.model_selection import train_test_split, cross_val_score
-import optuna
 from sklearn.metrics import cohen_kappa_score
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Activation, Dropout
 from tensorflow.keras.optimizers import Adam
-
+import tensorflow as tf
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.base import BaseEstimator, ClassifierMixin
+from keras.utils import to_categorical
+from scikeras.wrappers import KerasClassifier
+from sklearn.metrics import accuracy_score
+from optuna.integration import KerasPruningCallback  # Importación correcta
 
 try:
   STOPWORDS = set(stopwords.words('spanish'))
@@ -69,9 +72,17 @@ def train_red_neuronal(path_df, study_name, ntrials, flag_generar_archivo=False)
     text_colummns = ["texto_limpio"]
     pesos_columns = [col for col in numeric_columns if col.startswith('pesos_')]
     numeric_columns = [col for col in numeric_columns if not col.startswith('pesos_')]
-    df[text_colummns] = df[text_colummns].fillna('')
+    final_columns = numeric_columns + categorical_columns + text_colummns + pesos_columns
+    df["texto_limpio"] = df["texto_limpio"].fillna('')
     
-    # Definir los transformadores para el pipeline
+    # Preparar los datos
+    X = df[final_columns]
+    y = df["target"].values
+
+    SEED = 12345
+    TEST_SIZE = 0.2
+
+
     # Definir los transformadores para el pipeline
     preprocessor = ColumnTransformer(
         transformers=[
@@ -82,133 +93,105 @@ def train_red_neuronal(path_df, study_name, ntrials, flag_generar_archivo=False)
             ]), pesos_columns),
             ('cat', Pipeline([
                 ('imputer', SimpleImputer(strategy='most_frequent')),
-                ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+                ('onehot', OneHotEncoder(handle_unknown='ignore'))
             ]), categorical_columns),
-            ('text', TfidfVectorizer(max_features=10000), text_colummns[0])
+            ('text', TfidfVectorizer(max_features=10000), "texto_limpio")
         ],
-        remainder='drop',
-        sparse_threshold=0  # Forzamos a que todas las salidas sean matrices densas
+        remainder='drop'
     )
     
-    final_columns = numeric_columns + categorical_columns + text_colummns + pesos_columns
-    X = df[final_columns]
-    y = df["target"].values
     
     
+    # Función para construir el modelo Keras
+    def build_nn(input_dim):
+        model = Sequential([
+            Dense(1000, input_shape=(input_dim,)),
+            Activation('relu'),
+            Dropout(0.5),
+            Dense(500),
+            Activation('relu'),
+            Dropout(0.5),
+            Dense(50),
+            Activation('relu'),
+            Dropout(0.5),
+            Dense(27),  # Ajustar según el número de clases en la salida
+            Activation('softmax')
+        ])
+        model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        return model
+
+    # Adaptar el modelo Keras para usarlo en Scikit-learn
+    output_dim = len(np.unique(y))  # Número de clases
+    nn_model = KerasClassifier(
+        model=build_nn,
+        # output_dim=output_dim,
+        epochs=20,
+        batch_size=64,
+        verbose=1
+    )
+
+    # Pipeline de preprocesamiento y modelo
+    model_pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('model', nn_model)
+    ])
     
-    SEED = 12345
-    TEST_SIZE = 0.2
+
+   
+
     # División en conjuntos de entrenamiento y prueba
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
-    
-    
-    
-    
-    
-    # Ajuste para obtener input_dim
-    # preprocessor.fit(X_train)  # Aseguramos que el preprocesador esté ajustado
-    # X_transformed = preprocessor.transform(X_train)
-    # input_dim = X_transformed.shape[1]  # Calcula el número de características después del preprocesamiento
-    
-    # Definir un clasificador compatible con Scikit-Learn
-    class KerasNN(BaseEstimator, ClassifierMixin):
-        def __init__(self, input_dim, output_dim, n_layers=1, units=64, activation='relu', dropout=0.2, learning_rate=1e-3, epochs=20, batch_size=32):
-            self.input_dim = input_dim
-            self.output_dim = output_dim
-            self.n_layers = n_layers
-            self.units = units
-            self.activation = activation
-            self.dropout = dropout
-            self.learning_rate = learning_rate
-            self.epochs = epochs
-            self.batch_size = batch_size
-            self.model = None
 
-        def build_model(self):
-            model = Sequential()
-            for i in range(self.n_layers):
-                if i == 0:
-                    model.add(Dense(self.units, input_shape=(self.input_dim,)))
-                else:
-                    model.add(Dense(self.units))
-                model.add(Activation(self.activation))
-                model.add(Dropout(self.dropout))
-            model.add(Dense(self.output_dim))
-            model.add(Activation('softmax'))
-            
-            model.compile(loss='categorical_crossentropy',
-                          optimizer=Adam(learning_rate=self.learning_rate),
-                          metrics=['accuracy'])
-            return model
-
-        def fit(self, X, y):
-            #y = to_categorical(y)
-            self.model = self.build_model()
-            self.model.fit(X, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
-            return self
-
-        def predict(self, X):
-            return np.argmax(self.model.predict(X), axis=1)
-
-        def predict_proba(self, X):
-            return self.model.predict(X)
-
-    def build_nn(trial, input_dim, output_dim):
-        n_layers = trial.suggest_int('n_layers', 1, 5)
-        units = trial.suggest_int('units', 32, 512)
-        activation = trial.suggest_categorical('activation', ['relu', 'sigmoid', 'tanh'])
-        dropout = trial.suggest_float('dropout', 0.1, 0.5)
-        learning_rate = trial.suggest_loguniform('learning_rate', 1e-5, 1e-2)
-        epochs = trial.suggest_int('epochs', 10, 50)
-        batch_size = trial.suggest_categorical('batch_size', [16, 32, 64, 128])
-        
-        return KerasNN(
-            input_dim=input_dim, 
-            output_dim=output_dim, 
-            n_layers=n_layers, 
-            units=units, 
-            activation=activation, 
-            dropout=dropout, 
-            learning_rate=learning_rate, 
-            epochs=epochs, 
-            batch_size=batch_size
-        )
-
+    # Convertir las etiquetas a formato one-hot si es multiclase
+    y_train = to_categorical(y_train)
+    y_test = to_categorical(y_test)
     
+    # Obtener el input_dim después de transformar los datos
+    X_train_transformed = model_pipeline.named_steps['preprocessor'].fit_transform(X_train)
+    input_dim = X_train_transformed.shape[1]
+
+    # Redefinir el pipeline con el input_dim correcto
+    model_pipeline.set_params(model__model=build_nn(input_dim))
+
+    # Entrenar el modelo
+    model_pipeline.fit(X_train, y_train)
     
+    kappa_scorer = make_scorer(cohen_kappa_score)    
     def objective(trial):
+      # Probar distintos hiperparámetros
+      n_layers = trial.suggest_int('n_layers', 2, 4)
+      units = [trial.suggest_int(f'units_l{i}', 64, 512) for i in range(n_layers)]
+      dropout = trial.suggest_float('dropout', 0.2, 0.5)
+      learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2)
+      batch_size = trial.suggest_categorical('batch_size', [32, 64, 128])
+      epochs = trial.suggest_int('epochs', 10, 50)
       
-      preprocessor.fit(X_train)  # Aseguramos que el preprocesador esté ajustado
-      X_transformed = preprocessor.transform(X_train)
-      input_dim = X_transformed.shape[1]
+      def build_model(input_dim):
+          model = Sequential()
+          for i in range(n_layers):
+              model.add(Dense(units[i], input_shape=(input_dim,), activation='relu'))
+              model.add(Dropout(dropout))
+          model.add(Dense(27, activation='softmax'))
+          model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss='categorical_crossentropy', metrics=['kappa'])
+          return model
       
-      # Calcular dinámicamente el número de clases
-      output_dim = len(np.unique(y))
-
-      # Crear el modelo Keras con los hiperparámetros sugeridos
-      nn_model = build_nn(trial, input_dim=input_dim, output_dim=output_dim)
-
-      # Pipeline de preprocesamiento y modelo
-      model_pipeline = Pipeline([
-          ('preprocessor', preprocessor),
-          ('model', nn_model)
-      ])
+      model_pipeline.set_params(model__model=build_model(input_dim))
+      model_pipeline.set_params(model__batch_size=batch_size, model__epochs=epochs)
       
-      # Validación cruzada
-      kappa_scores = cross_val_score(
-          model_pipeline, X_train, y_train, 
-          cv=3, 
-          scoring=make_scorer(cohen_kappa_score, needs_proba=True)
-      )
-      
-      return kappa_scores.mean()
+      # model_pipeline.fit(X_train, y_train)
+      # accuracy = model_pipeline.score(X_test, y_test)
+      # return accuracy
+      # Realizar validación cruzada usando Kappa como métrica
+      kappa = cross_val_score(model_pipeline, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+        
+      return kappa
     
-
+    
     # Crear un estudio y optimizar
     print(f"{datetime.now()} - Inicio optimizacion de hiperparametros \n")
     study = optuna.create_study(direction='maximize', 
                                 storage=bbdd,  # Specify the storage URL here.
-                                study_name=f"rn_{study_name}",
+                                study_name=f"rnborraadsar_{study_name}",
                                 load_if_exists=True)
     study.optimize(objective, n_trials=ntrials)
 
@@ -225,9 +208,296 @@ def train_red_neuronal(path_df, study_name, ntrials, flag_generar_archivo=False)
     print(f"Detalles del error:\n{tb}")
 
   
+def train_red_neuronal_sin_optuna(path_df, study_name):
+  """
+  """
+  # abrimos directamente el archiv
+  df = pd.read_csv(path_df, sep=";")
+  
+  
+  numeric_columns = get_numeric_columns(df)
+  categorical_columns = get_categorical_columns(df, ['Descripcion', 'texto_limpio'])
+  text_colummns = ["texto_limpio"]
+  pesos_columns = [col for col in numeric_columns if col.startswith('pesos_')]
+  numeric_columns = [col for col in numeric_columns if not col.startswith('pesos_')]
+  final_columns = numeric_columns + categorical_columns + text_colummns + pesos_columns
+  df["texto_limpio"] = df["texto_limpio"].fillna('')
+  X_text = df['texto_limpio'].values  # Columna de texto
+  
+  # Preprocesamiento de datos numéricos y booleanos
+  scaler = StandardScaler()
+  X_pesos_scaled = scaler.fit_transform(df[pesos_columns])
+  
+
+  # Preprocesamiento de texto usando TF-IDF
+  vectorizer = TfidfVectorizer(max_features=10000)
+  X_text_tfidf = vectorizer.fit_transform(X_text).toarray()
+
+  # Combinar datos numéricos y texto
+  X_combined = np.hstack((df[numeric_columns].values, X_pesos_scaled, X_text_tfidf))
+  
+    # Preparar los datos
+  X = df[final_columns]
+  y = df["target"].values
+
+  SEED = 12345
+  TEST_SIZE = 0.2
+  batch_size = 64
+  nb_epochs = 20
+  
+    # División en conjunto de entrenamiento y prueba
+  X_train, X_test, y_train, y_test = train_test_split(X_combined, y, test_size=TEST_SIZE, random_state=SEED)
+
+  # Convertir las etiquetas a formato one-hot si es multiclase
+  y_train = to_categorical(y_train)
+  y_test = to_categorical(y_test)
+
+  # Definir la red neuronal
+  model = Sequential()
+
+  model.add(Dense(1000, input_shape=(X_combined.shape[1],)))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+
+  model.add(Dense(500))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+
+  model.add(Dense(50))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+
+  model.add(Dense(27))  # Número de clases en la salida
+  model.add(Activation('softmax'))
+
+  # Compilar el modelo
+  model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+  # Entrenar el modelo
+  #model.fit(X_train, y_train, batch_size=64, epochs=20, validation_data=(X_test, y_test), verbose=1)
+  model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_test, y_test), verbose=1)
+  
+  
 
 
+ # Hacer predicciones
+  y_train_predclass = model.predict(X_train, batch_size=batch_size)
+  y_test_predclass = model.predict(X_test, batch_size=batch_size)
 
+  # Convertir las etiquetas y las predicciones a formato ordinal
+  y_train_labels = np.argmax(y_train, axis=1)
+  y_test_labels = np.argmax(y_test, axis=1)
+  y_train_pred_labels = np.argmax(y_train_predclass, axis=1)
+  y_test_pred_labels = np.argmax(y_test_predclass, axis=1)
+  
+  
+
+  # Calcular la precisión y generar el informe de clasificación
+  print("Train accuracy: {}".format(round(accuracy_score(y_train_labels, y_train_pred_labels), 3)))
+  print("Test accuracy: {}".format(round(accuracy_score(y_test_labels, y_test_pred_labels), 3)))
+  print("Train kappa: {}".format(round(cohen_kappa_score(y_train_labels, y_train_pred_labels), 3)))
+  print("Test kappa: {}".format(round(cohen_kappa_score(y_test_labels, y_test_pred_labels), 3)))
+  print("\nTest Classification Report\n")
+  print(classification_report(y_test_labels, y_test_pred_labels))
+  
+
+
+  
+
+def model_rnn_optuna(path_df, study_name, ntrials):
+  df = pd.read_csv(path_df, sep=";")
+  bbdd = "sqlite:///optuna.sqlite3"
+  numeric_columns = get_numeric_columns(df)
+  categorical_columns = get_categorical_columns(df, ['Descripcion', 'texto_limpio'])
+  text_colummns = ["texto_limpio"]
+  pesos_columns = [col for col in numeric_columns if col.startswith('pesos_')]
+  numeric_columns = [col for col in numeric_columns if not col.startswith('pesos_')]
+  final_columns = numeric_columns + categorical_columns + text_colummns + pesos_columns
+  df["texto_limpio"] = df["texto_limpio"].fillna('')
+  X_text = df['texto_limpio'].values  # Columna de texto
+
+  # Preprocesamiento de datos numéricos y booleanos
+  scaler = StandardScaler()
+  X_pesos_scaled = scaler.fit_transform(df[pesos_columns])
+
+  # Preprocesamiento de texto usando TF-IDF
+  vectorizer = TfidfVectorizer(max_features=10000)
+  X_text_tfidf = vectorizer.fit_transform(X_text).toarray()
+
+  # Combinar datos numéricos y texto
+  X_combined = np.hstack((df[numeric_columns].values, X_pesos_scaled, X_text_tfidf))
+
+  # Preparar los datos
+  y = df["target"].values
+
+  SEED = 12345
+  TEST_SIZE = 0.2
+  X_train, X_test, y_train, y_test = train_test_split(X_combined, y, test_size=TEST_SIZE, random_state=SEED)
+
+  # Convertir las etiquetas a formato one-hot si es multiclase
+  y_train = to_categorical(y_train)
+  y_test = to_categorical(y_test)
+
+  # Función objetivo para Optuna
+  def objective(trial):
+      # Hiperparámetros a optimizar
+      n_layers = trial.suggest_int('n_layers', 2, 4)
+      units = [trial.suggest_int(f'units_l{i}', 64, 512) for i in range(n_layers)]
+      dropout = trial.suggest_float('dropout', 0.2, 0.5)
+      learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2)
+      #batch_size = trial.suggest_categorical('batch_size', [32,64])
+      nb_epochs = trial.suggest_int('epochs', 20, 50)
+      
+
+      # Definir la red neuronal
+      model = Sequential()
+      model.add(Dense(units[0], input_shape=(X_train.shape[1],)))
+      model.add(Activation('relu'))
+      model.add(Dropout(dropout))
+
+      for i in range(1, n_layers):
+          model.add(Dense(units[i]))
+          model.add(Activation('relu'))
+          model.add(Dropout(dropout))
+
+      model.add(Dense(27))  # Número de clases en la salida
+      model.add(Activation('softmax'))
+
+      # Compilar el modelo
+      model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+      # Callback para permitir el pruning (opcional)
+      callbacks = [KerasPruningCallback(trial, "val_accuracy")]
+
+      # Entrenar el modelo
+      model.fit(X_train, y_train, validation_data=(X_test, y_test),
+                          batch_size=64, epochs=nb_epochs, verbose=0,
+                          callbacks=callbacks)
+
+      # Evaluar usando Kappa
+      y_pred = np.argmax(model.predict(X_test), axis=1)
+      y_true = np.argmax(y_test, axis=1)
+      kappa_score = cohen_kappa_score(y_true, y_pred)
+
+      return kappa_score
+
+  # Crear un estudio y optimizar
+  print(f"{datetime.now()} - Inicio optimizacion de hiperparametros \n")
+  study = optuna.create_study(direction='maximize', 
+                              storage=bbdd,  # Specify the storage URL here.
+                              study_name=f"rnsborraadsar_{study_name}",
+                              load_if_exists=True)
+  study.optimize(objective, n_trials=ntrials)
+
+
+  # Imprimir los mejores hiperparámetros encontrados
+  print('Mejores hiperparámetros:', study.best_params)
+  print('Mejor valor de Kappa:', study.best_value)
+  
+
+def model_rnn_optuna_sin_texto(path_df, study_name, ntrials):
+  df = pd.read_csv(path_df, sep=";")
+  bbdd = "sqlite:///optuna.sqlite3"
+  numeric_columns = get_numeric_columns(df)
+  categorical_columns = get_categorical_columns(df, ['Descripcion', 'texto_limpio'])
+  
+  pesos_columns = [col for col in numeric_columns if col.startswith('pesos_')]
+  numeric_columns = [col for col in numeric_columns if not col.startswith('pesos_')]
+  final_columns = numeric_columns + categorical_columns  + pesos_columns
+  
+  
+
+  # Preprocesamiento de datos numéricos y booleanos
+  scaler = StandardScaler()
+  X_pesos_scaled = scaler.fit_transform(df[pesos_columns])
+
+  # Aplicar OneHotEncoding a las columnas categóricas
+  onehot_encoder = OneHotEncoder(handle_unknown='ignore', sparse_output=False)
+  X_categorical_encoded = onehot_encoder.fit_transform(df[categorical_columns])
+
+  # Convertir el resultado en un DataFrame
+  encoded_columns = onehot_encoder.get_feature_names_out(categorical_columns)
+  X_categorical_encoded_df = pd.DataFrame(X_categorical_encoded, columns=encoded_columns)
+
+  # Reiniciar los índices para que coincidan con el DataFrame original
+  X_categorical_encoded_df.index = df.index
+
+  # Eliminar las columnas categóricas originales del DataFrame
+  df = df.drop(columns=categorical_columns)
+
+  # Combinar el DataFrame original con las columnas codificadas
+  # df = pd.concat([df, X_categorical_encoded_df], axis=1)
+
+  # Combinar datos numéricos y texto
+  X_combined = np.hstack((df[numeric_columns].values, X_pesos_scaled, X_categorical_encoded_df))
+
+  # Preparar los datos
+  y = df["target"].values
+
+  SEED = 12345
+  TEST_SIZE = 0.2
+  X_train, X_test, y_train, y_test = train_test_split(X_combined, y, test_size=TEST_SIZE, random_state=SEED)
+
+  # Convertir las etiquetas a formato one-hot si es multiclase
+  y_train = to_categorical(y_train)
+  y_test = to_categorical(y_test)
+
+  # Función objetivo para Optuna
+  def objective(trial):
+      # Hiperparámetros a optimizar
+      n_layers = trial.suggest_int('n_layers', 2, 4)
+      units = [trial.suggest_int(f'units_l{i}', 64, 128) for i in range(n_layers)]
+      dropout = trial.suggest_float('dropout', 0.2, 0.5)
+      learning_rate = trial.suggest_float('learning_rate', 1e-5, 1e-2)
+      #batch_size = trial.suggest_categorical('batch_size', [32,64])
+      nb_epochs = trial.suggest_int('epochs', 20, 50)
+      
+
+      # Definir la red neuronal
+      model = Sequential()
+      model.add(Dense(units[0], input_shape=(X_train.shape[1],)))
+      model.add(Activation('relu'))
+      model.add(Dropout(dropout))
+
+      for i in range(1, n_layers):
+          model.add(Dense(units[i]))
+          model.add(Activation('relu'))
+          model.add(Dropout(dropout))
+
+      model.add(Dense(27))  # Número de clases en la salida
+      model.add(Activation('softmax'))
+
+      # Compilar el modelo
+      model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+      # Callback para permitir el pruning (opcional)
+      callbacks = [KerasPruningCallback(trial, "val_accuracy")]
+
+      # Entrenar el modelo
+      model.fit(X_train, y_train, validation_data=(X_test, y_test),
+                          batch_size=64, epochs=nb_epochs, verbose=0,
+                          callbacks=callbacks)
+
+      # Evaluar usando Kappa
+      y_pred = np.argmax(model.predict(X_test), axis=1)
+      y_true = np.argmax(y_test, axis=1)
+      kappa_score = cohen_kappa_score(y_true, y_pred)
+
+      return kappa_score
+
+  # Crear un estudio y optimizar
+  print(f"{datetime.now()} - Inicio optimizacion de hiperparametros \n")
+  study = optuna.create_study(direction='maximize', 
+                              storage=bbdd,  # Specify the storage URL here.
+                              study_name=f"rnsborraadsar_{study_name}",
+                              load_if_exists=True)
+  study.optimize(objective, n_trials=ntrials)
+
+
+  # Imprimir los mejores hiperparámetros encontrados
+  print('Mejores hiperparámetros:', study.best_params)
+  print('Mejor valor de Kappa:', study.best_value)
+  
 def preprocessing(path_df): 
   """
   Eliminamos columnas que no sirven, Imputamos NANs, convertimos Class a numérico y limpiamos el texto.
@@ -249,7 +519,6 @@ def preprocessing(path_df):
   df["texto_limpio"] = df["Descripcion"].apply(pre_procesamiento_texto)
   
   return df
-  
 
 def featureEngineering(df):
   """
