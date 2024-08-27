@@ -27,7 +27,10 @@ from keras.utils import to_categorical
 from scikeras.wrappers import KerasClassifier
 from sklearn.metrics import accuracy_score
 from optuna.integration import KerasPruningCallback  # Importación correcta
-
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.utils import to_categorical
+from sklearn.preprocessing import LabelEncoder
+#import autokeras as ak
 try:
   STOPWORDS = set(stopwords.words('spanish'))
   nlp = spacy.load("es_core_news_sm")
@@ -59,7 +62,7 @@ def train_red_neuronal(path_df, study_name, ntrials, flag_generar_archivo=False)
       df = preprocessing(path_df)
       print(f"{datetime.now()} - Inicio feature engineering\n")
       df = featureEngineering(df)
-      
+      df["texto_limpio"] = df["texto_limpio"].fillna('')
       df.to_csv(f"../datasets/df_rnn.csv", index=False, sep=";")
     
     
@@ -276,11 +279,8 @@ def train_red_neuronal_sin_optuna(path_df, study_name):
   # Entrenar el modelo
   #model.fit(X_train, y_train, batch_size=64, epochs=20, validation_data=(X_test, y_test), verbose=1)
   model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_test, y_test), verbose=1)
-  
-  
-
-
- # Hacer predicciones
+   
+  # Hacer predicciones
   y_train_predclass = model.predict(X_train, batch_size=batch_size)
   y_test_predclass = model.predict(X_test, batch_size=batch_size)
 
@@ -497,14 +497,210 @@ def model_rnn_optuna_sin_texto(path_df, study_name, ntrials):
   # Imprimir los mejores hiperparámetros encontrados
   print('Mejores hiperparámetros:', study.best_params)
   print('Mejor valor de Kappa:', study.best_value)
+
+
+def red_neuronal_basica_ivan(path_df, study, trials):
+  """
+  ESTE ANDA PAPA!!
+  """
+  df = pd.read_excel(path_df)
+  print(f"{datetime.now()} - Inicio preprocessing \n")
+  df.drop(columns=["DescCuenta","NTesoreria","DescTesoreria","DescEntidad","Beneficiario"], axis=1)
+  df["Descripcion"] = df["Descripcion"].fillna("")
+  df["ClaseReg"] = df["ClaseReg"].fillna("Indefinido")
+  Class = list(df.Class.unique())
+  clases = {val:Class.index(val) for val in Class}
+  def get_class(val):
+      return clases[val]
+  df['target'] = df['Class'].apply(get_class)
+  print(f"{datetime.now()} - Inicio feature engineering \n")
+  df['Descripcion'] = df['Descripcion'].astype(str)   
+  df['text_size'] = df['Descripcion'].str.len()
+  df['text_words_count'] = df['Descripcion'].apply(lambda x: len(x.split()))
+  print(f"{datetime.now()} - Calculamos pesos \n")
+  dictOfWords = {}
+  for target in df.target.unique():
+    df_target = df[df["target"]==target]
+    all_descriptions = ' '.join(df_target['Descripcion'].dropna())  # Concatenar todas las descripciones
+    nlp = spacy.load("es_core_news_sm")
+    doc = nlp(all_descriptions)
+    clean_text = []
+    for token in doc:
+        if (
+            not token.is_stop  # No incluir stopwords
+            and not token.is_punct  # No incluir puntuación
+            and not token.like_num  # Opción para excluir números si prefieres solo palabras
+        ):
+            #clean_text.append(token.lemma_.lower())
+            clean_text.append(str(token.lemma_).lower())
+    # Filtrar stopwords y no palabras alfa
+    freq_of_words = pd.Series(clean_text).value_counts()
+    dic_words = freq_of_words.to_dict()
+    dictOfWords[str(target)] = dic_words
+    df[f'pesos_{target}'] = df['Descripcion'].apply(pesos,dic_words=dic_words)
+
+  # Parámetros
+  nb_classes = df['target'].nunique()  # Número de clases en la columna target
+  max_words = 10000  # Número máximo de palabras a considerar
+  batch_size = 64
+  nb_epochs = 20
+  print(f"{datetime.now()} - Tokenizamos \n")
+  # Tokenizar el texto (convierte 'texto_limpio' de objeto a una matriz numérica)
+  tokenizer = Tokenizer(num_words=max_words)
+  tokenizer.fit_on_texts(df['Descripcion'].astype(str))  # Asegúrate de que sea tratado como cadena de texto
+  X = tokenizer.texts_to_matrix(df['Descripcion'].astype(str), mode='tfidf')  # Convierte el texto a TF-IDF
+
+  # Convertir la columna 'target' a one-hot encoding
+  y = to_categorical(df['target'], nb_classes)
+
+  SEED = 12345
+  TEST = 0.2
+  # Dividir el dataset en train y test
+  X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST, random_state=SEED)
   
+  # Crear el modelo
+  model = Sequential()
+  model.add(Dense(1000, input_shape=(max_words,)))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(500))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(50))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(nb_classes))
+  model.add(Activation('softmax'))
+
+  # Compilar el modelo
+  model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+  print(f"{datetime.now()} - Entrenamos modelo \n")
+  # Entrenar el modelo
+  model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_test, y_test), verbose=1)
+
+  # Hacer predicciones
+  y_train_predclass = model.predict(X_train, batch_size=batch_size)
+  y_test_predclass = model.predict(X_test, batch_size=batch_size)
+
+  # Convertir las etiquetas y las predicciones a formato ordinal
+  y_train_labels = np.argmax(y_train, axis=1)
+  y_test_labels = np.argmax(y_test, axis=1)
+  y_train_pred_labels = np.argmax(y_train_predclass, axis=1)
+  y_test_pred_labels = np.argmax(y_test_predclass, axis=1)
+
+  # Calcular la precisión y generar el informe de clasificación
+  print("Train accuracy: {}".format(round(accuracy_score(y_train_labels, y_train_pred_labels), 3)))
+  print("Test accuracy: {}".format(round(accuracy_score(y_test_labels, y_test_pred_labels), 3)))
+  print("\nTest Classification Report\n")
+  print(classification_report(y_test_labels, y_test_pred_labels))
+
+
+
+
+def model_autokeras(path_df, study, trials, flag_file=False):
+  """
+  !pip install autokeras
+  """
+  
+  if( flag_file ):
+    print(f"{datetime.now()} - Inicio preprocesamiento\n")
+    df = preprocessing(path_df)
+    print(f"{datetime.now()} - Inicio feature engineering\n")
+    df = featureEngineering(df)
+    df["texto_limpio"] = df["texto_limpio"].fillna('')
+    df.to_csv(f"../datasets/df_final.csv", index=False, sep=";")
+    
+  
+  print(f"[{datetime.now()}] - Leemos el dataset \n")
+  df = pd.read_csv("../datasets/df_final.csv", sep=";")
+  
+   
+  numeric_columns = get_numeric_columns(df)
+  categorical_columns = get_categorical_columns(df, ['Descripcion', 'texto_limpio'])
+  text_colummns = ["texto_limpio"]
+  pesos_columns = [col for col in numeric_columns if col.startswith('pesos_')]
+  numeric_columns = [col for col in numeric_columns if not col.startswith('pesos_')]
+  final_columns = numeric_columns + categorical_columns + text_colummns + pesos_columns
+  df["texto_limpio"] = df["texto_limpio"].fillna('')
+  
+  # Preparar los datos
+  X = df[final_columns]
+  y = df["target"]
+  
+   
+  SEED = 12345
+  TEST_SIZE = 0.2
+  MAX_WORDS = 10000  # Número máximo de palabras a considerar
+  MAX_CLASSES = df['target'].nunique()  # Número de clases en la columna target
+  batch_size = 64
+  nb_epochs = 20
+  
+  
+  y = to_categorical(df["target"], num_classes=df['target'].nunique())  # Convertir a one-hot encoding
+
+  
+  print(f"[{datetime.now()}] - Tokenizacion TFIDF \n")
+  tokenizer = Tokenizer(num_words=MAX_WORDS)
+  tokenizer.fit_on_texts(df['texto_limpio'].astype(str))  # Asegúrate de que sea tratado como cadena de texto
+  X = tokenizer.texts_to_matrix(df['texto_limpio'].astype(str), mode='tfidf')  # Convierte el texto a TF-IDF
+
+  X_df = pd.DataFrame(X, columns=[f'tfidf_{i}' for i in range(X.shape[1])])
+  
+
+  # Concatenamos el nuevo DataFrame con el original
+  XX = pd.concat([df, X_df], axis=1)
+  XX = XX.drop(columns=['texto_limpio'])
+ 
+  
+
+  # Dividir el dataset en train y test
+  X_train, X_test, y_train, y_test = train_test_split(XX, y, test_size=TEST_SIZE, random_state=SEED)
+  total_features = XX.shape[1]
+  
+  # Crear el modelo
+  model = Sequential()
+  model.add(Dense(1000, input_shape=(total_features,)))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(500))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(50))
+  model.add(Activation('relu'))
+  model.add(Dropout(0.5))
+  model.add(Dense(MAX_CLASSES))
+  model.add(Activation('softmax'))
+
+  # Compilar el modelo
+  model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+  print(f"{datetime.now()} - Entrenamos modelo \n")
+  # Entrenar el modelo
+  model.fit(X_train, y_train, batch_size=batch_size, epochs=nb_epochs, validation_data=(X_test, y_test), verbose=1)
+
+  # Hacer predicciones
+  y_train_predclass = model.predict(X_train, batch_size=batch_size)
+  y_test_predclass = model.predict(X_test, batch_size=batch_size)
+
+  # Convertir las etiquetas y las predicciones a formato ordinal
+  y_train_labels = np.argmax(y_train, axis=1)
+  y_test_labels = np.argmax(y_test, axis=1)
+  y_train_pred_labels = np.argmax(y_train_predclass, axis=1)
+  y_test_pred_labels = np.argmax(y_test_predclass, axis=1)
+
+  # Calcular la precisión y generar el informe de clasificación
+  print("Train accuracy: {}".format(round(accuracy_score(y_train_labels, y_train_pred_labels), 3)))
+  print("Test accuracy: {}".format(round(accuracy_score(y_test_labels, y_test_pred_labels), 3)))
+  print("\nTest Classification Report\n")
+  print(classification_report(y_test_labels, y_test_pred_labels))
+
+
 def preprocessing(path_df): 
   """
   Eliminamos columnas que no sirven, Imputamos NANs, convertimos Class a numérico y limpiamos el texto.
   """
   df = pd.read_excel(path_df)
   
-  df.drop(columns=["DescCuenta","NTesoreria","DescTesoreri­a","DescEntidad","Beneficiario"], axis=1)
+  df.drop(columns=["DescCuenta","NTesoreria","DescTesoreria","DescEntidad","Beneficiario"], inplace=True)
   
   df["Descripcion"] = df["Descripcion"].fillna("")
   df["ClaseReg"] = df["ClaseReg"].fillna("Indefinido")
@@ -516,18 +712,30 @@ def preprocessing(path_df):
       return clases[val]
     
   df['target'] = df['Class'].apply(get_class)
+  df.drop(columns=['Class'], inplace=True)
   df["texto_limpio"] = df["Descripcion"].apply(pre_procesamiento_texto)
   
   return df
+
 
 def featureEngineering(df):
   """
   Creamos features de texto y features de pesos sobre el texto limpio.
   """
   # features de texto -----------------------------------------------------------------------
+  df['Descripcion'] = df['Descripcion'].astype(str)   
+  df['description_size'] = df['Descripcion'].str.len()
+  df['description_words_count'] = df['Descripcion'].apply(lambda x: len(x.split())) 
+  df.drop(columns=['Descripcion'], inplace=True)
+  
   df['texto_limpio'] = df['texto_limpio'].astype(str)   
   df['text_size'] = df['texto_limpio'].str.len()
   df['text_words_count'] = df['texto_limpio'].apply(lambda x: len(x.split()))  
+  
+  categ = ['TipoComp','TipoPres','TipoReg','ClaseReg','TipoCta']
+  for col in categ:
+      df = pd.concat([df,pd.get_dummies(df[col],prefix=col, prefix_sep='_')],axis=1)
+      df.drop(col, axis=1, inplace=True)
   
   # conteo de palabras -----------------------------------------------------------------------
   dictOfWords = {}
