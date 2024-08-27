@@ -22,63 +22,53 @@ from nltk.corpus import stopwords
 import warnings
 warnings.filterwarnings("ignore")
 
-def preprocess(path_df, study_name, fe=True):
+def preprocess(path_df,study_name, fe=True):
   try:
     # leer datos
     df = pd.read_excel(path_df)
+    # limpieza completa del texto
     
-    # Elimnar columnas que no sirven
-    df = eliminar_columnas(df, ["DescCuenta","NTesoreria","DescTesoreria","DescEntidad","Beneficiario"])
+    df["Descripcion"] = df["Descripcion"].fillna("")
+    Class = list(df.Class.unique())
+    clases = {val:Class.index(val) for val in Class}
+    def get_class(val):
+        return clases[val]
 
-    # Imputar NA's
-    df = imputarNA(df)
-
-    # "Class" de String a Entero
-    df = ClassToInt(df)
-    
-    # Preprocesamiento del texto
+    df['target'] = df['Class'].apply(get_class)
     df["texto_limpio"] = df["Descripcion"].apply(pre_procesamiento_texto)
+    dictOfWords = {}
     
-    # Guardamos      
-    df.to_csv(f"df_preprocessing.csv", index=False, sep=';')
+    # si está activado el feature engineering
+    if fe:
+      print("realizando feature engineering")
+      df, dictOfWords = feature_engineering.fe(df)
+    else:
+      print("No se realizó feature engineering")
+      
+    # filtrar features
+    features = []
+    for x in enumerate(df.dtypes):
+        if x[1] in ["float64","int64","bool"]:
+            features.append(df.columns[x[0]])
+            
+            
+    params = {"study_name":study_name,
+              "features":features,
+              "dict_words":dictOfWords}
+    
+    with open(f'models/lgbm/{study_name}/params_{study_name}.json','w') as file:
+      json.dump(params,file,indent=4)
+      
+    df[features].to_csv(f"models/lgbm/{study_name}/df_train.csv", index=False)
   
   except Exception as e:
     tb = traceback.format_exc()
     print(f"Se produjo un error: {e}")
     print(f"Detalles del error:\n{tb}")
 
-
-
-def eliminar_columnas(df, columnas):  
-   """
-   Eliminamos columnas que no sirven.
-   """
-   return df.drop(columns=columnas, inplace=True)
-
-
-def imputarNA(df):
-   """
-   """
-   df["Descripcion"] = df["Descripcion"].fillna("")
-   df["ClaseReg"] = df["ClaseReg"].fillna("Indefinido")
-   return df
-
-
-def ClassToInt(df):
-  """
-  """
-  Class = list(df.Class.unique())
-  clases = {val:Class.index(val) for val in Class}
-  def get_class(val):
-    return clases[val]
-  df['target'] = df['Class'].apply(get_class)
-  df.drop(columns=['Class'], axis=1, inplace=True)
-  return df
-
+  
+  
 def pre_procesamiento_texto(text):
-  """
-
-  """
   # Quito simbolos
   texto = solo_numeros_y_letras(text)
 
