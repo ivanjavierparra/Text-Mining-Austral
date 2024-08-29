@@ -4,7 +4,7 @@ import traceback
 import warnings
 import lightgbm as lgb
 import optuna
-from sklearn.metrics import make_scorer, cohen_kappa_score
+from sklearn.metrics import make_scorer, cohen_kappa_score, accuracy_score
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.pipeline import Pipeline

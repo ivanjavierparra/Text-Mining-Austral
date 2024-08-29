@@ -10,7 +10,7 @@ import spacy
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import optuna
-from sklearn.metrics import make_scorer, cohen_kappa_score, classification_report
+from sklearn.metrics import make_scorer, cohen_kappa_score, classification_report, accuracy_score
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold 
 from sklearn.metrics import cohen_kappa_score
 from tensorflow.keras.models import Sequential
@@ -25,7 +25,6 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.base import BaseEstimator, ClassifierMixin
 from keras.utils import to_categorical
 from scikeras.wrappers import KerasClassifier
-from sklearn.metrics import accuracy_score
 from tensorflow.keras.preprocessing.text import Tokenizer
 import spacy
 from sklearn.ensemble import RandomForestClassifier
