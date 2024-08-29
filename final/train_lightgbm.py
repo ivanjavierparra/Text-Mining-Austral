@@ -11,6 +11,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 import importlib 
 import archivos
+import joblib
 
 warnings.filterwarnings("ignore")
 BBDD = "sqlite:///optuna.sqlite3"
@@ -527,3 +528,65 @@ def model_lightgbm(study_name,ntrials):
     print(f"Detalles del error:\n{tb}")
 
   
+
+
+
+def best_modelo_base():
+
+    STUDY_NAME="lightgbm_modelo_base"
+        
+    # Leemos
+    df = archivos.get_modelo_base()
+
+    # obtenemos mejor modelo
+    final_columns = [elemento for elemento in df.columns if elemento != 'target']
+    X = df[final_columns]
+    y = df["target"]
+
+    # entrenamos
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
+
+    print("Cargando el modelo optimo")
+    study = optuna.load_study(study_name=STUDY_NAME, storage=BBDD)
+    
+    # guardamos
+    print("Mejores hiperparámetros:", study.best_params)
+            
+    best_model = lgb.LGBMClassifier(**study.best_params)
+    best_model.fit(X_train, y_train)
+    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl')    
+    
+    
+    
+def best_modelo_modelo_text_mining():
+    
+    STUDY_NAME = "modelo_text_mining"
+        
+    # Leemos
+    df = archivos.modelo_text_mining()
+    
+    # Eliminamos columnas que nos nos sirven
+    df.drop(columns=['texto_limpio'], inplace=True)
+    
+    # Preparar los datos
+    final_columns = [elemento for elemento in df.columns if elemento != 'target']
+    X = df[final_columns]
+    y = df["target"]
+    
+    # Split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
+    
+    print("Cargando el modelo optimo")
+    study = optuna.load_study(study_name=STUDY_NAME, storage=BBDD)
+    
+    # guardamos
+    print("Mejores hiperparámetros:", study.best_params)
+            
+    best_model = lgb.LGBMClassifier(**study.best_params)
+    best_model.fit(X_train, y_train)
+    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl') 
+    
+
+def best_modelo_completo():
+    
+    pass
