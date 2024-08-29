@@ -111,7 +111,12 @@ def modelo_base():
     study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
     
     
-            
+    # guardamos mejor modelo
+    print("Mejores hiperparámetros:", study.best_params)   
+    best_model = lgb.LGBMClassifier(**study.best_params, verbose_eval=False)
+    best_model.fit(X_train, y_train)
+    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl')           
+    
     
     
 def modelo_text_mining():
@@ -207,6 +212,11 @@ def modelo_text_mining():
         #Corro la optimizacion
         study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
         
+        # guardamos mejor modelo
+        print("Mejores hiperparámetros:", study.best_params)   
+        best_model = lgb.LGBMClassifier(**study.best_params, verbose_eval=False)
+        best_model.fit(X_train, y_train)
+        joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl')  
     
     except Exception as e:
         tb = traceback.format_exc()
@@ -335,6 +345,20 @@ def modelo_completo():
             
         #Corro la optimizacion
         study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+        
+        
+        best_model = lgb.LGBMClassifier(**study.best_params, verbose_eval=False)
+    
+        # Crear pipeline completo
+        pipeline = Pipeline([
+            ('preprocessor', preprocessor),
+            ('model', best_model)
+        ])
+        
+        # Entrenar el modelo
+        pipeline.fit(X_train, y_train)
+        
+        joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl')
 
     except Exception as e:
         tb = traceback.format_exc()
@@ -407,6 +431,13 @@ def modelo_tfidf():
     # Obtener los mejores hiperparámetros
     best_params = study.best_params
     print("Mejores hiperparámetros:", best_params)
+    
+    best_model = lgb.LGBMClassifier(**study.best_params, verbose_eval=False)
+    
+    # Entrenar el modelo
+    best_model.fit(X_train, y_train)
+    
+    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl') 
 
 
 
@@ -515,10 +546,6 @@ def model_lightgbm(study_name,ntrials):
                                 study_name=f"lightgbm_{study_name}",
                                 load_if_exists=True)
     study.optimize(objective, n_trials=ntrials)
-
-
-    
-
     
     
     
@@ -526,67 +553,3 @@ def model_lightgbm(study_name,ntrials):
     tb = traceback.format_exc()
     print(f"Se produjo un error: {e}")
     print(f"Detalles del error:\n{tb}")
-
-  
-
-
-
-def best_modelo_base():
-
-    STUDY_NAME="lightgbm_modelo_base"
-        
-    # Leemos
-    df = archivos.get_modelo_base()
-
-    # obtenemos mejor modelo
-    final_columns = [elemento for elemento in df.columns if elemento != 'target']
-    X = df[final_columns]
-    y = df["target"]
-
-    # entrenamos
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
-
-    print("Cargando el modelo optimo")
-    study = optuna.load_study(study_name=STUDY_NAME, storage=BBDD)
-    
-    # guardamos
-    print("Mejores hiperparámetros:", study.best_params)
-            
-    best_model = lgb.LGBMClassifier(**study.best_params)
-    best_model.fit(X_train, y_train)
-    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl')    
-    
-    
-    
-def best_modelo_modelo_text_mining():
-    
-    STUDY_NAME = "modelo_text_mining"
-        
-    # Leemos
-    df = archivos.modelo_text_mining()
-    
-    # Eliminamos columnas que nos nos sirven
-    df.drop(columns=['texto_limpio'], inplace=True)
-    
-    # Preparar los datos
-    final_columns = [elemento for elemento in df.columns if elemento != 'target']
-    X = df[final_columns]
-    y = df["target"]
-    
-    # Split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
-    
-    print("Cargando el modelo optimo")
-    study = optuna.load_study(study_name=STUDY_NAME, storage=BBDD)
-    
-    # guardamos
-    print("Mejores hiperparámetros:", study.best_params)
-            
-    best_model = lgb.LGBMClassifier(**study.best_params)
-    best_model.fit(X_train, y_train)
-    joblib.dump(best_model, f'models/lgbm/{STUDY_NAME}/model_{STUDY_NAME}.pkl') 
-    
-
-def best_modelo_completo():
-    
-    pass
