@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import joblib
 import json
 import os
 import re
@@ -33,7 +34,7 @@ import archivos
 from nltk.corpus import stopwords
 
 warnings.filterwarnings("ignore")
-BBDD = "sqlite:///optuna.sqlite3"
+BBDD = "sqlite:///optuna_randomforest.sqlite3"
 TRIALS = 2
 SEED = 12345
 TEST_SIZE = 0.2
@@ -58,7 +59,10 @@ def modelo_base():
     # Split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
     
-    def cv_es_rfc_objective(trial):
+    # kappa
+    kappa_scorer = make_scorer(cohen_kappa_score)
+    
+    def cv_es_rf_objective(trial):
 
         #Parametros para LightGBM
         rfc_params = {      
@@ -71,48 +75,13 @@ def modelo_base():
                             'bootstrap': trial.suggest_categorical('bootstrap', [True, False])
                             } 
 
-        #Voy a generar estimaciones de los 5 modelos del CV sobre los datos test y los acumulo en la matriz scores_ensemble
-        scores_ensemble = np.zeros((len(y_test),len(y_train.unique())))
+        # Crear el modelo RandomForestClassifier con los parámetros sugeridos
+        rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
 
-        #Score del 5 fold CV inicializado en 0
-        score_folds = 0
-
-        #Numero de splits del CV
-        n_splits = 5
-
-        #Objeto para hacer el split estratificado de CV
-        skf = StratifiedKFold(n_splits=n_splits)
-
-        for i, (if_index, oof_index) in enumerate(skf.split(X_train, y_train)):
-            
-            # Dataset in fold (donde entreno)
-            X_if, y_if = X_train.iloc[if_index], y_train.iloc[if_index]
-            
-            # Dataset Out of fold (donde mido la performance del CV)
-            X_oof, y_oof = X_train.iloc[oof_index], y_train.iloc[oof_index]
-
-            # Crear el modelo RandomForestClassifier con los parámetros sugeridos
-            rfc_model = RandomForestClassifier(**rfc_params, random_state=42)
-                        
-            # Entrenar el modelo
-            rfc_model.fit(X_if, y_if)
-            
-            # Acumular los scores (probabilidades) de cada clase para cada uno de los modelos que determino en los folds
-            scores_ensemble += rfc_model.predict_proba(X_test)
-            
-            # Score del fold (registros de dataset train que en este fold quedan out of fold)
-            score_folds += cohen_kappa_score(y_oof, rfc_model.predict(X_oof), weights='quadratic') / n_splits
-   
-
-   
-        #Determino score en conjunto de test y asocio como metrica adicional en optuna
-        test_score = cohen_kappa_score(y_test,scores_ensemble.argmax(axis=1),weights = 'quadratic')
-        trial.set_user_attr("test_score", test_score)
-
-        #Devuelvo score del 5fold cv a optuna para que optimice en base a eso
-        return(score_folds)
-
-  
+        # Realizar validación cruzada usando Kappa como métrica
+        kappa = cross_val_score(rfc_model, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+        
+        return kappa
 
     #Genero estudio
     study = optuna.create_study(direction='maximize', 
@@ -121,7 +90,15 @@ def modelo_base():
                                     load_if_exists=True)
         
     #Corro la optimizacion
-    study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+    study.optimize(cv_es_rf_objective, n_trials=TRIALS)
+    
+    # guardamos mejor modelo
+    print(f"[{datetime.now()}] - Mejores hiperparámetros: {study.best_params}\n")
+    best_model = RandomForestClassifier(**study.best_params, random_state=SEED)
+    print(f"[{datetime.now()}] - Entrenando modelo con los mejores hiperparametros.. \n")
+    best_model.fit(X_train, y_train)
+    joblib.dump(best_model, f'models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl')           
+    print(f"[{datetime.now()}] - Se ha guardado el modelo en models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl \n")
             
     
     
@@ -147,7 +124,10 @@ def modelo_text_mining():
         # Split
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
         
-        def cv_es_rfc_objective(trial):
+        # kappa
+        kappa_scorer = make_scorer(cohen_kappa_score)
+        
+        def cv_es_rf_objective(trial):
 
             #Parametros para LightGBM
             rfc_params = {      
@@ -160,48 +140,13 @@ def modelo_text_mining():
                                 'bootstrap': trial.suggest_categorical('bootstrap', [True, False])
                                 } 
 
-            #Voy a generar estimaciones de los 5 modelos del CV sobre los datos test y los acumulo en la matriz scores_ensemble
-            scores_ensemble = np.zeros((len(y_test),len(y_train.unique())))
+            # Crear el modelo RandomForestClassifier con los parámetros sugeridos
+            rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
 
-            #Score del 5 fold CV inicializado en 0
-            score_folds = 0
-
-            #Numero de splits del CV
-            n_splits = 5
-
-            #Objeto para hacer el split estratificado de CV
-            skf = StratifiedKFold(n_splits=n_splits)
-
-            for i, (if_index, oof_index) in enumerate(skf.split(X_train, y_train)):
-                
-                # Dataset in fold (donde entreno)
-                X_if, y_if = X_train.iloc[if_index], y_train.iloc[if_index]
-                
-                # Dataset Out of fold (donde mido la performance del CV)
-                X_oof, y_oof = X_train.iloc[oof_index], y_train.iloc[oof_index]
-
-                # Crear el modelo RandomForestClassifier con los parámetros sugeridos
-                rfc_model = RandomForestClassifier(**rfc_params, random_state=42)
-                            
-                # Entrenar el modelo
-                rfc_model.fit(X_if, y_if)
-                
-                # Acumular los scores (probabilidades) de cada clase para cada uno de los modelos que determino en los folds
-                scores_ensemble += rfc_model.predict_proba(X_test)
-                
-                # Score del fold (registros de dataset train que en este fold quedan out of fold)
-                score_folds += cohen_kappa_score(y_oof, rfc_model.predict(X_oof), weights='quadratic') / n_splits
-    
-
-   
-            #Determino score en conjunto de test y asocio como metrica adicional en optuna
-            test_score = cohen_kappa_score(y_test,scores_ensemble.argmax(axis=1),weights = 'quadratic')
-            trial.set_user_attr("test_score", test_score)
-
-            #Devuelvo score del 5fold cv a optuna para que optimice en base a eso
-            return(score_folds)
-
-  
+            # Realizar validación cruzada usando Kappa como métrica
+            kappa = cross_val_score(rfc_model, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+            
+            return kappa
 
         #Genero estudio
         study = optuna.create_study(direction='maximize', 
@@ -210,7 +155,16 @@ def modelo_text_mining():
                                         load_if_exists=True)
             
         #Corro la optimizacion
-        study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+        study.optimize(cv_es_rf_objective, n_trials=TRIALS)
+        
+        
+        # guardamos mejor modelo
+        print(f"[{datetime.now()}] - Mejores hiperparámetros: {study.best_params}\n")
+        best_model = RandomForestClassifier(**study.best_params, random_state=SEED)
+        print(f"[{datetime.now()}] - Entrenando modelo con los mejores hiperparametros.. \n")
+        best_model.fit(X_train, y_train)
+        joblib.dump(best_model, f'models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl')           
+        print(f"[{datetime.now()}] - Se ha guardado el modelo en models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl \n")
         
     
     except Exception as e:
@@ -253,7 +207,9 @@ def modelo_completo():
         # split
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
 
-
+        # kappa
+        kappa_scorer = make_scorer(cohen_kappa_score)
+        
         # Definir los transformadores para el pipeline
         preprocessor = ColumnTransformer(
             transformers=[
@@ -265,7 +221,7 @@ def modelo_completo():
             remainder='drop'
         )
 
-        def cv_es_rfc_objective(trial):
+        def cv_es_rf_objective(trial):
 
             #Parametros para LightGBM
             rfc_params = {      
@@ -278,52 +234,19 @@ def modelo_completo():
                                 'bootstrap': trial.suggest_categorical('bootstrap', [True, False])
                                 } 
 
-            #Voy a generar estimaciones de los 5 modelos del CV sobre los datos test y los acumulo en la matriz scores_ensemble
-            scores_ensemble = np.zeros((len(y_test),len(y_train.unique())))
-
-            #Score del 5 fold CV inicializado en 0
-            score_folds = 0
-
-            #Numero de splits del CV
-            n_splits = 5
-
-            #Objeto para hacer el split estratificado de CV
-            skf = StratifiedKFold(n_splits=n_splits)
-
-            for i, (if_index, oof_index) in enumerate(skf.split(X_train, y_train)):
-                
-                # Dataset in fold (donde entreno)
-                X_if, y_if = X_train.iloc[if_index], y_train.iloc[if_index]
-                
-                # Dataset Out of fold (donde mido la performance del CV)
-                X_oof, y_oof = X_train.iloc[oof_index], y_train.iloc[oof_index]
-
-                # Crear el modelo RandomForestClassifier con los parámetros sugeridos
-                rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
-                
-                # Crear pipeline completo
-                pipeline = Pipeline([
-                    ('preprocessor', preprocessor),
-                    ('model', rfc_model)
-                ])
-                
-                # Entrenar el modelo
-                pipeline.fit(X_if, y_if)
-                
-                # Acumular los scores (probabilidades) de cada clase para cada uno de los modelos que determino en los folds
-                scores_ensemble += pipeline.predict_proba(X_test)
-                
-                # Score del fold (registros de dataset train que en este fold quedan out of fold)
-                score_folds += cohen_kappa_score(y_oof, pipeline.predict(X_oof), weights='quadratic') / n_splits
-
+            # Crear el modelo RandomForestClassifier con los parámetros sugeridos
+            rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
             
-            #Determino score en conjunto de test y asocio como metrica adicional en optuna
-            test_score = cohen_kappa_score(y_test,scores_ensemble.argmax(axis=1),weights = 'quadratic')
-            trial.set_user_attr("test_score", test_score)
-
-            #Devuelvo score del 5fold cv a optuna para que optimice en base a eso
-            return(score_folds)
-
+            # Crear pipeline completo
+            pipeline = Pipeline([
+                ('preprocessor', preprocessor),
+                ('model', rfc_model)
+            ])
+            
+            # Realizar validación cruzada usando Kappa como métrica
+            kappa = cross_val_score(pipeline, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+            
+            return kappa
   
 
         #Genero estudio
@@ -333,7 +256,25 @@ def modelo_completo():
                                         load_if_exists=True)
             
         #Corro la optimizacion
-        study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+        study.optimize(cv_es_rf_objective, n_trials=TRIALS)
+        
+        
+        # guardamos mejor modelo
+        print(f"[{datetime.now()}] - Mejores hiperparámetros: {study.best_params}\n")
+        
+        # Crear el modelo RandomForestClassifier con los parámetros sugeridos
+        best_model = RandomForestClassifier(**study.best_params, random_state=SEED)
+        
+        # Crear pipeline completo
+        pipeline = Pipeline([
+            ('preprocessor', preprocessor),
+            ('model', best_model)
+        ])
+        
+        print(f"[{datetime.now()}] - Entrenando modelo con los mejores hiperparametros.. \n")
+        pipeline.fit(X_train, y_train)
+        joblib.dump(pipeline, f'models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl')           
+        print(f"[{datetime.now()}] - Se ha guardado el modelo en models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl \n")
 
     except Exception as e:
         tb = traceback.format_exc()
@@ -364,8 +305,11 @@ def modelo_tfidf():
 
     # Dividir los datos
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=SEED)
+    
+    # kappa
+    kappa_scorer = make_scorer(cohen_kappa_score)
 
-    def cv_es_rfc_objective(trial):
+    def cv_es_rf_objective(trial):
        # Definir los hiperparámetros a optimizar
         rfc_params = {
             'n_estimators': trial.suggest_int('n_estimators', 100, 1000, step=100),
@@ -378,14 +322,13 @@ def modelo_tfidf():
 
         # Crear y entrenar el modelo
         rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
+        
+        # Realizar validación cruzada usando Kappa como métrica
+        kappa = cross_val_score(model, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+        
+        return kappa
 
-        rfc_model.fit(X_train, y_train)
-
-        # Evaluar el modelo
-        y_pred = rfc_model.predict(X_test)
-        accuracy = accuracy_score(y_test, y_pred)
-
-        return accuracy
+        
 
     #Genero estudio
     study = optuna.create_study(direction='maximize', 
@@ -394,13 +337,16 @@ def modelo_tfidf():
                                     load_if_exists=True)
         
     #Corro la optimizacion
-    study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+    study.optimize(cv_es_rf_objective, n_trials=TRIALS)
 
-    # Obtener los mejores hiperparámetros
-    best_params = study.best_params
-    print("Mejores hiperparámetros:", best_params)
-
-
+    
+    # guardamos mejor modelo
+    print(f"[{datetime.now()}] - Mejores hiperparámetros: {study.best_params}\n")
+    best_model = RandomForestClassifier(**study.best_params, random_state=SEED)
+    print(f"[{datetime.now()}] - Entrenando modelo con los mejores hiperparametros.. \n")
+    best_model.fit(X_train, y_train)
+    joblib.dump(best_model, f'models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl')           
+    print(f"[{datetime.now()}] - Se ha guardado el modelo en models/randomforest/{STUDY_NAME}/model_{STUDY_NAME}.pkl \n")
 
 
 
@@ -434,7 +380,7 @@ def chatgpt():
     )
 
     # Definir la función objetivo para Optuna
-    def cv_es_rfc_objective(trial):
+    def cv_es_rf_objective(trial):
 
         # Parámetros a optimizar para RandomForest
         rfc_params = {
@@ -499,7 +445,7 @@ def chatgpt():
                                     load_if_exists=True)
         
     #Corro la optimizacion
-    study.optimize(cv_es_rfc_objective, n_trials=TRIALS)
+    study.optimize(cv_es_rf_objective, n_trials=TRIALS)
 
     # Obtener los mejores parámetros
     best_params = study.best_params
