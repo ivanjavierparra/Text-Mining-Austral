@@ -34,8 +34,8 @@ import archivos
 from nltk.corpus import stopwords
 
 warnings.filterwarnings("ignore")
-BBDD = "sqlite:///optuna_randomforest.sqlite3"
-TRIALS = 2
+BBDD = "sqlite:///optuna_lightgbm.sqlite3"
+TRIALS = 100
 SEED = 12345
 TEST_SIZE = 0.2
 
@@ -86,7 +86,7 @@ def modelo_base():
     #Genero estudio
     study = optuna.create_study(direction='maximize', 
                                     storage=BBDD,  # Specify the storage URL here.
-                                    study_name=f"randomforest1234_{STUDY_NAME}",
+                                    study_name=f"randomforest_{STUDY_NAME}",
                                     load_if_exists=True)
         
     #Corro la optimizacion
@@ -151,7 +151,7 @@ def modelo_text_mining():
         #Genero estudio
         study = optuna.create_study(direction='maximize', 
                                         storage=BBDD,  # Specify the storage URL here.
-                                        study_name=f"randomforest1234_{STUDY_NAME}",
+                                        study_name=f"randomforest_{STUDY_NAME}",
                                         load_if_exists=True)
             
         #Corro la optimizacion
@@ -252,7 +252,7 @@ def modelo_completo():
         #Genero estudio
         study = optuna.create_study(direction='maximize', 
                                         storage=BBDD,  # Specify the storage URL here.
-                                        study_name=f"randomforest1234_{STUDY_NAME}",
+                                        study_name=f"randomforest_{STUDY_NAME}",
                                         load_if_exists=True)
             
         #Corro la optimizacion
@@ -333,7 +333,7 @@ def modelo_tfidf():
     #Genero estudio
     study = optuna.create_study(direction='maximize', 
                                     storage=BBDD,  # Specify the storage URL here.
-                                    study_name=f"randomforest1234_{STUDY_NAME}",
+                                    study_name=f"randomforest_{STUDY_NAME}",
                                     load_if_exists=True)
         
     #Corro la optimizacion
@@ -441,7 +441,7 @@ def chatgpt():
     #Genero estudio
     study = optuna.create_study(direction='maximize', 
                                     storage=BBDD,  # Specify the storage URL here.
-                                    study_name=f"randomforest1234_{STUDY_NAME}",
+                                    study_name=f"randomforest_{STUDY_NAME}",
                                     load_if_exists=True)
         
     #Corro la optimizacion

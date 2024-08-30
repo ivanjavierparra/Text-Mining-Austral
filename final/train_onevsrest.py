@@ -18,8 +18,8 @@ import os
 import importlib 
 import archivos
 warnings.filterwarnings("ignore")
-BBDD = "sqlite:///optuna_ovr.sqlite3"
-TRIALS = 2
+BBDD = "sqlite:///optuna_lightgbm.sqlite3"
+TRIALS = 50
 SEED = 12345
 TEST_SIZE = 0.2
 
