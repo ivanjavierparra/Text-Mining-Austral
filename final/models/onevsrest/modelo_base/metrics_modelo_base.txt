@@ -1,7 +1,0 @@
-study_name: onevsrest_modelo_base
-Fecha y hora: 2024-08-24 18:56:49.448579
-Kappa: 0.39173531335977707
-Accuracy: 0.5197325857235281
-dimensióm Train: (37093, 7)
-dimensióm Test: (9274, 7)
-Mejores hiperparámetros: {'C': 12.06856386461068, 'solver': 'newton-cg', 'max_iter': 973}

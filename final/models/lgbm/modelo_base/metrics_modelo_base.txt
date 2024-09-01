@@ -1,6 +1,0 @@
-study_name: modelo_base
-Fecha y hora: 2024-08-24 15:39:27.459677
-Kappa: 0.9415519069451493
-Accuracy: 0.9492128531378046
-dimensióm Test: (9274, 7)
-Mejores hiperparámetros: {'learning_rate': 0.09712370566745632, 'num_leaves': 122, 'max_depth': 14, 'min_child_samples': 5, 'subsample': 0.9823215615558255, 'colsample_bytree': 0.7360254172301791, 'reg_alpha': 7.22386016361006e-05, 'reg_lambda': 0.3044311021691825}
