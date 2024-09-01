@@ -324,7 +324,7 @@ def modelo_tfidf():
         rfc_model = RandomForestClassifier(**rfc_params, random_state=SEED)
         
         # Realizar validación cruzada usando Kappa como métrica
-        kappa = cross_val_score(model, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
+        kappa = cross_val_score(rfc_model, X_train, y_train, cv=3, scoring=kappa_scorer).mean()
         
         return kappa
 
